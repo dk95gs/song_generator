@@ -55,10 +55,17 @@ def create_section(key_bpm_dir, section_layers, target_bpm, cached_drum=None, se
     for layer in section_layers:
         folder = GLOBAL_DRUMS_DIR if layer == "drums" else os.path.join(SAMPLES_DIR, key_bpm_dir, layer)
         files = [f for f in os.listdir(folder) if f.endswith(".wav")]
+        
         if not files:
+            
             continue
 
         if layer == "drums":
+            
+            if not files:
+                print(f"[INFO] No drum samples found. Skipping drum layer.")
+                cached_drum = None  # Clear cached drum just in case
+                continue
             if cached_drum is not None:
                 sample = cached_drum
                 chosen = "cached_drum.wav"
@@ -66,6 +73,7 @@ def create_section(key_bpm_dir, section_layers, target_bpm, cached_drum=None, se
                 chosen = random.choice(files)
                 sample = load_and_adjust_sample(os.path.join(folder, chosen), target_bpm)
                 cached_drum = sample
+
         elif layer == "chords" and cached_chords is not None:
             sample = cached_chords
             chosen = "cached_chords.wav"
@@ -90,6 +98,8 @@ def create_section(key_bpm_dir, section_layers, target_bpm, cached_drum=None, se
     return section, used_files, cached_drum
 
 def generate_lofi_song(index):
+    cached_drum = None
+
     key_bpm_dir = random.choice(get_key_bpm_folders())
     bpm_str, _ = key_bpm_dir.split("_", 1)
     bpm = int(bpm_str)
