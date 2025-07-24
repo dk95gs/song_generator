@@ -8,8 +8,8 @@ from hashlib import sha1
 NUM_SONGS = 1000
 MIN_SONG_LENGTH_SEC = 150
 MAX_SONG_LENGTH_SEC = 180
-DEFAULT_SECTION_DURATION_SEC = 24
-SHORT_SECTION_DURATION_SEC = 12  # for intro
+DEFAULT_SECTION_DURATION_SEC = 21.33 
+SHORT_SECTION_DURATION_SEC = 10.67  # for intro
 
 # Paths
 SAMPLES_DIR = "samples"
@@ -97,6 +97,21 @@ def create_section(key_bpm_dir, section_layers, target_bpm, cached_drum=None, se
 
     return section, used_files, cached_drum
 
+def generate_structure():
+    structure = ["intro"]
+    current_duration = SHORT_SECTION_DURATION_SEC  # intro
+
+    section_presets = ["loop_a", "loop_a", "loop_b", "bridge", "loop_a", "loop_a", "loop_b"]
+    random.shuffle(section_presets)
+
+    while current_duration + DEFAULT_SECTION_DURATION_SEC < random.randint(MIN_SONG_LENGTH_SEC, MAX_SONG_LENGTH_SEC):
+        next_section = random.choice(section_presets)
+        structure.append(next_section)
+        current_duration += DEFAULT_SECTION_DURATION_SEC
+
+    structure.append("outro")
+    return structure
+
 def generate_lofi_song(index):
     cached_drum = None
 
@@ -106,16 +121,17 @@ def generate_lofi_song(index):
     cached_drum = None
     cached_chords_sample = None
 
-    structure = (
-        ["intro"] +
-        ["loop_a"] +
-        ["loop_a"] * 2 +
-        ["bridge"] +
-        ["loop_a"] * 2 +
-        ["loop_b"] +
-        ["loop_a"] * 2 +
-        ["outro"]
-    )
+    structure = generate_structure()
+#    structure = (
+ #       ["intro"] +
+ #       ["loop_a"] +
+ #      ["loop_a"] * 2 +
+  #      ["bridge"] +
+ #       ["loop_a"] * 2 +
+  #      ["loop_b"] +
+ #       ["loop_a"] * 2 +
+  #      ["outro"]
+ #   )
 
     section_presets = {
         "intro":  ["chords"],

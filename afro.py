@@ -1,16 +1,14 @@
 import os
 import subprocess
 import random
-import re
 from pydub import AudioSegment, effects
 from hashlib import sha1
 
 # Configuration
 NUM_SONGS = 1000
-MIN_SONG_LENGTH_SEC = 150
-MAX_SONG_LENGTH_SEC = 180
+SONG_LENGTH_SEC = 180
 DEFAULT_SECTION_DURATION_SEC = 24
-SHORT_SECTION_DURATION_SEC = 12  # for intro
+SHORT_SECTION_DURATION_SEC = 12
 
 # Paths
 SAMPLES_DIR = "samples"
@@ -22,180 +20,165 @@ used_patterns = set()
 
 def get_key_bpm_folders():
     return [
-        f for f in os.listdir("samples")
-        if os.path.isdir(os.path.join("samples", f)) and "afro" in f.lower()
+        f for f in os.listdir(SAMPLES_DIR)
+        if os.path.isdir(os.path.join(SAMPLES_DIR, f)) and "_" in f and f != "drums"
     ]
 
-
-def extract_bpm_from_filename(filename):
-    match = re.search(r'(?<!\d)(\d{2,3})(?!\d)', filename)
-    if match:
-        return int(match.group(1))
-    return None
-
-
-def rubberband_stretch(input_path, output_path, original_bpm, target_bpm):
-    ratio = target_bpm / original_bpm
-
-    # Clamp ratio to avoid extremes
-    if ratio < 0.5 or ratio > 2.0:
-        print(f"⚠️ Skipping {input_path} — stretch ratio {ratio:.2f} out of bounds")
-        raise ValueError("Stretch ratio too extreme")
-
-    subprocess.run([
-        "/Users/moody/bin/rubberband",
-        "--time", str(ratio),
-        "--fine",        # ✅ use R3 engine
-        "--formant",     # ✅ preserve vocal timbre
-        "-q",            # ✅ suppress terminal output
-        input_path,
-        output_path
-    ], check=True)
-
-
 def load_and_adjust_sample(path, target_bpm):
-    original_bpm = extract_bpm_from_filename(os.path.basename(path))
-    if not original_bpm:
-        print(f"⚠️ No BPM found in: {path}, skipping.")
-        return AudioSegment.silent(duration=1000)
+    return AudioSegment.from_wav(path)
 
-    warped_path = path.replace(".wav", f"_warped_{target_bpm}.wav")
-
-    try:
-        rubberband_stretch(path, warped_path, original_bpm, target_bpm)
-    except Exception as e:
-        print(f"⚠️ Failed to warp {path}: {e}")
-        return AudioSegment.silent(duration=1000)
-
-    return AudioSegment.from_wav(warped_path)
-
-
-def get_rms(audio):
-    return audio.rms if len(audio) > 0 else 0
-
-def adjust_drum_volume_if_needed(drum, other_layers):
-    other_rms_values = [get_rms(layer) for layer in other_layers if layer is not None]
-    if not other_rms_values:
-        return drum
-    average_rms = sum(other_rms_values) / len(other_rms_values)
-    drum_rms = get_rms(drum)
-    if drum_rms > average_rms:
-        db_difference = 20 * ((drum_rms / average_rms) ** 0.5)
-        drum = drum - min(db_difference, 6)
-    return drum
-
-def create_section(key_bpm_dir, section_layers, target_bpm, cached_drum=None, section_name=None, cached_chords=None):
-    section_duration = SHORT_SECTION_DURATION_SEC if section_name == "intro" else DEFAULT_SECTION_DURATION_SEC
+def create_section(key_bpm_dir, section_layers, target_bpm, cached_drum=None, section_name=None, static_layers={}):
+    section_duration = SHORT_SECTION_DURATION_SEC if section_name in ["intro", "breakdown", "outro"] else DEFAULT_SECTION_DURATION_SEC
     duration_ms = section_duration * 1000
     section = AudioSegment.silent(duration=duration_ms)
     used_files = []
-    samples_by_layer = {}
 
     gain_per_layer = -3 if len(section_layers) >= 4 else -2
 
     for layer in section_layers:
         folder = GLOBAL_DRUMS_DIR if layer == "drums" else os.path.join(SAMPLES_DIR, key_bpm_dir, layer)
-        files = [f for f in os.listdir(folder) if f.endswith(".wav")]
-        if not files:
+        if not os.path.isdir(folder):
             continue
 
-        if layer == "drums":
-            if cached_drum is not None:
-                sample = cached_drum
-                chosen = "cached_drum.wav"
-            else:
-                chosen = random.choice(files)
-                sample = load_and_adjust_sample(os.path.join(folder, chosen), target_bpm)
-                cached_drum = sample
-        elif layer == "chords" and cached_chords is not None:
-            sample = cached_chords
-            chosen = "cached_chords.wav"
+        if layer == "drums" and cached_drum:
+            sample = cached_drum
+            chosen = "cached_drum.wav"
+        elif layer in static_layers:
+            sample = static_layers[layer]
+            chosen = f"cached_{layer}.wav"
         else:
+            files = [f for f in os.listdir(folder) if f.endswith(".wav")]
+            if not files:
+                continue
+
+            if section_name == "intro" and layer == "ambient":
+                num_layers = random.choice([2, 3])
+                ambient_samples = random.sample(files, min(num_layers, len(files)))
+                combined = AudioSegment.silent(duration=duration_ms)
+                for amb_file in ambient_samples:
+                    amb_sample = load_and_adjust_sample(os.path.join(folder, amb_file), target_bpm)
+
+                    if len(amb_sample) > 3000:
+                        offset = random.randint(0, min(2000, len(amb_sample) - 1000))
+                        amb_sample = amb_sample[offset:]
+
+                    if random.random() < 0.3:
+                        amb_sample = amb_sample.reverse()
+
+                    if random.random() < 0.4:
+                        pitch_factor = 2 ** (random.uniform(-2, 2) / 12.0)
+                        amb_sample = amb_sample._spawn(amb_sample.raw_data, overrides={
+                            "frame_rate": int(amb_sample.frame_rate * pitch_factor)
+                        }).set_frame_rate(amb_sample.frame_rate)
+
+                    amb_sample = amb_sample + random.randint(-6, 3)
+                    pan = random.uniform(-0.8, 0.8)
+                    amb_sample = amb_sample.pan(pan)
+
+                    combined = combined.overlay(amb_sample[:duration_ms])
+                    used_files.append(f"{layer}/{amb_file}")
+
+                static_layers["ambient"] = combined
+                continue
+
             chosen = random.choice(files)
             sample = load_and_adjust_sample(os.path.join(folder, chosen), target_bpm)
 
+            if layer == "drums":
+                cached_drum = sample
+            if layer in ["chords", "bass", "ambient", "melody", "fx"]:
+                static_layers[layer] = sample
+
         sample = sample + gain_per_layer
-        samples_by_layer[layer] = sample[:duration_ms]
-        used_files.append(os.path.join(folder, chosen))  # full correct path
+        section = section.overlay(sample[:duration_ms])
+        used_files.append(f"{layer}/{chosen}")
 
+    # Always overlay cached ambient sample even if it's not in this section's layers
+    if "ambient" in static_layers:
+        ambient_sample = static_layers["ambient"]
+        ambient_overlay = ambient_sample - 6
+        ambient_overlay = ambient_overlay[:duration_ms]
+        section = section.overlay(ambient_overlay)
 
-    if "drums" in samples_by_layer:
-        drum_sample = samples_by_layer["drums"]
-        other_samples = [v for k, v in samples_by_layer.items() if k != "drums"]
-        samples_by_layer["drums"] = adjust_drum_volume_if_needed(drum_sample, other_samples)
-
-    for sample in samples_by_layer.values():
-        section = section.overlay(sample)
-
-    return section, used_files, cached_drum
+    return section, used_files, cached_drum, static_layers
 
 def generate_lofi_song(index):
     key_bpm_dir = random.choice(get_key_bpm_folders())
     bpm_str, _ = key_bpm_dir.split("_", 1)
     bpm = int(bpm_str)
     cached_drum = None
-    cached_chords_sample = None
+    static_layers = {}
 
-    structure = (
-        ["intro"] +
-        ["loop_a"] +
-        ["loop_a"] * 2 +
-        ["bridge"] +
-        ["loop_a"] * 2 +
-        ["loop_b"] +
-        ["loop_a"] * 2 +
-        ["outro"]
-    )
+    structure = [
+        "intro",
+        "beat_drop",
+        "main_loop",
+        "main_loop",
+        "breakdown",
+        "return_loop",
+        "main_loop",
+        "return_loop",
+        "outro"
+    ]
 
     section_presets = {
-        "intro":  ["pads", "chords"],
-        "loop_a": ["drums", "chords", "bass", "melody", "pads", "vocals"],
-        "loop_b": ["drums", "melody", "chords", "pads"],
-        "bridge": ["drums", "chords", "melody", "pads", "fx"],
-        "outro":  ["drums", "chords", "pads"]
+        "intro":        ["ambient", "fx"],
+        "beat_drop":    ["drums", "chords", "bass"],
+        "main_loop":    ["drums", "chords", "bass", "melody", "fx"],
+        "breakdown":    ["ambient", "melody", "fx"],
+        "return_loop":  ["drums", "chords", "melody", "fx"],
+        "outro":        ["ambient", "chords"]
     }
 
     song = AudioSegment.silent(duration=0)
     pattern_id = []
 
     for i, section_name in enumerate(structure):
-        if song.duration_seconds >= MAX_SONG_LENGTH_SEC:
-            break
+        section, used, cached_drum, static_layers = create_section(
+            key_bpm_dir,
+            section_presets[section_name],
+            bpm,
+            cached_drum,
+            section_name=section_name,
+            static_layers=static_layers
+        )
 
-        if section_name == "intro":
-            section, used, cached_drum = create_section(
-                key_bpm_dir,
-                section_presets[section_name],
-                bpm,
-                cached_drum,
-                section_name=section_name
-            )
+        # Overlay riser
+        if section_name in ["beat_drop", "return_loop"] and i > 0:
+            riser_path = os.path.join(SAMPLES_DIR, key_bpm_dir, "risers")
+            if os.path.isdir(riser_path):
+                riser_files = [f for f in os.listdir(riser_path) if f.endswith(".wav")]
+                if riser_files:
+                    riser_file = random.choice(riser_files)
+                    riser_sample = load_and_adjust_sample(os.path.join(riser_path, riser_file), bpm)
+                    riser_sample = riser_sample - 3
+                    riser_duration = len(riser_sample)
+                    song_duration = len(song)
 
-            # Grab the actual path of the "chords" sample
-            chords_path = next((u for u in used if "/chords/" in u), None)
-            if chords_path:
-                cached_chords_sample = load_and_adjust_sample(chords_path, bpm)
-
-        else:
-            section, used, cached_drum = create_section(
-                key_bpm_dir,
-                section_presets[section_name],
-                bpm,
-                cached_drum,
-                section_name=section_name,
-                cached_chords=cached_chords_sample if section_name == "loop_a" else None
-            )
+                    if song_duration >= riser_duration:
+                        tail = song[-riser_duration:]
+                        blended = tail.overlay(riser_sample)
+                        song = song[:-riser_duration] + blended
+                    else:
+                        blended = song.overlay(riser_sample[-song_duration:])
+                        song = blended
 
         song += section
         pattern_id.append(tuple(sorted(used)))
+
+        if song.duration_seconds >= SONG_LENGTH_SEC:
+            break
+
+    if song.duration_seconds < 150:
+        return False
+
+    song = song.fade_in(3000).fade_out(4000)
+    song = effects.normalize(song)
 
     song_hash = sha1(str(pattern_id).encode()).hexdigest()
     if song_hash in used_patterns:
         return False
     used_patterns.add(song_hash)
-
-    song = song.fade_in(3000).fade_out(5000)
-    song = effects.normalize(song)
 
     filename = os.path.join(OUTPUT_DIR, f"song_{index:03d}.wav")
     song.export(filename, format="wav")
@@ -210,7 +193,6 @@ def generate_lofi_song(index):
     os.rename(limited_file, filename)
 
     return True
-
 
 def main():
     count = 0
