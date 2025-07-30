@@ -114,7 +114,7 @@ def create_section(compatible_folders, section_layers, target_bpm, default_sec, 
                 sample = (sample * times)[:duration_ms]
             else:
                 sample = sample[:duration_ms]
-            # Randomize volume of cached chords ------------------------------------------------------------------------------------------------------------------------------------------------------------ 
+                
             sample = sample - random.uniform(3.0, 6.0)
         else:
             chosen = random.choice(files)
