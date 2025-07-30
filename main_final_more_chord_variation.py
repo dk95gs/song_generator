@@ -109,6 +109,11 @@ def create_section(compatible_folders, section_layers, target_bpm, default_sec, 
         elif layer == "chords" and cached_chords is not None:
             sample = cached_chords
             chosen = "cached_chords.wav"
+            if len(sample) < duration_ms:
+                times = duration_ms // len(sample) + 1
+                sample = (sample * times)[:duration_ms]
+            else:
+                sample = sample[:duration_ms]
         else:
             chosen = random.choice(files)
             sample = load_and_adjust_sample(os.path.join(folder, chosen))

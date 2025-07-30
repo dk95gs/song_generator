@@ -174,7 +174,7 @@ def generate_lofi_song(index):
     section_presets = {
         "intro":  ["chords"],
         "loop_a": ["drums", "chords", "bass", "melody"],
-        "loop_b": ["drums", "melody", "bass", "chords"],
+        "loop_b": ["drums", "melody", "chords"],
         "bridge": ["drums", "chords", "melody"],
         "outro":  ["drums", "chords"]
     }
