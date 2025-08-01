@@ -185,35 +185,19 @@ def generate_lofi_song(index):
     pattern_id = []
     cached_drum = None
     cached_chords_sample = None
-    cached_loop_type = None  # Track which loop type gets the cached chords
 
     for section_name in structure:
-        # Determine if this section should use cached chords
-        use_cached_chords = False
-        current_section_layers = section_presets[section_name].copy()
-        
-        if cached_chords_sample is not None:
-            if cached_loop_type is None and section_name in ["loop_a", "loop_b", "bridge"]:
-                # First loop section after intro gets the cached chords
-                cached_loop_type = section_name
-                use_cached_chords = True
-            elif section_name == cached_loop_type or section_name == "outro":
-                # Same loop type as the one that got cached chords, OR outro
-                use_cached_chords = True
-            # All other sections (other loop types) will get fresh random chords
-
         section, used, cached_drum, chords_sample_info = create_section(
             compatible_folders,
-            current_section_layers,
+            section_presets[section_name],
             bpm,
             default_sec,
             short_sec,
             cached_drum,
             section_name=section_name,
-            cached_chords=cached_chords_sample if use_cached_chords else None
+            cached_chords=cached_chords_sample if section_name == "loop_a" else None
         )
 
-        # Cache the chords from the intro
         if chords_sample_info:
             chords_folder, chords_filename = chords_sample_info
             cached_chords_sample = load_and_adjust_sample(
